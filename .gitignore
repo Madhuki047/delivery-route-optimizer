@@ -1,0 +1,9 @@
+# Python cache and environment files
+_pycache_/
+*.pyc
+*.pyo
+*.pyd
+.env/
+venv/
+.idea/
+.DS_Store
