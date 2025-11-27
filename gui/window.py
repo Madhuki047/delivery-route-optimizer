@@ -1,30 +1,26 @@
-"""
-gui/window.py
--------------
+# PyQt5 GUI layer for the Delivery Route Optimizer.
+#
+# - Tab 1: "Optimizer"
+#     - Algorithm selection (NN / NN + 2-opt / BF)
+#     - Run button
+#     - Manage Locations (with address/postcode search)
+#     - Text output (route, distance, execution time)
+#     - Embedded map (folium HTML inside QWebEngineView)
+#
+# - Tab 2: "Algorithm Evaluation"
+#     - Button to generate performance graph
+#     - Graph image (execution_time.png) comparing algorithms
+#
+# The GUI does NOT implement algorithms itself.
+# It talks to a RouteOptimizerApp controller instance (from main.py).
 
-PyQt5 GUI layer for the Delivery Route Optimizer.
-
-- Tab 1: "Optimizer"
-    - Algorithm selection (NN / NN + 2-opt / BF)
-    - Run button
-    - Manage Locations (with address/postcode search)
-    - Text output (route, distance, execution time)
-    - Embedded map (folium HTML inside QWebEngineView)
-
-- Tab 2: "Algorithm Evaluation"
-    - Button to generate performance graph
-    - Graph image (execution_time.png) comparing algorithms
-
-The GUI does NOT implement algorithms itself.
-It talks to a RouteOptimizerApp controller instance (from main.py).
-"""
 
 import os
 import sys
 from typing import Dict
 
 from PyQt5.QtCore import Qt, QUrl
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtGui import QPixmap, QFont
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtWidgets import (
     QApplication,
@@ -47,20 +43,9 @@ from PyQt5.QtWidgets import (
     QDialogButtonBox,
 )
 
-
-
-
-from PyQt5.QtWidgets import QHBoxLayout, QLabel
-from PyQt5.QtGui import QPixmap, QFont
-
-
-
-
-from geopy.geocoders import Nominatim
-
 from src.models.location import Location
 from src.utils.benchmark import benchmark_algorithms
-
+from src.utils.geocoding import Geocoder
 
 
 # =====================================================================
@@ -68,18 +53,16 @@ from src.utils.benchmark import benchmark_algorithms
 # =====================================================================
 
 class LocationManagerDialog(QDialog):
-    """
-    Popup dialog for viewing / adding / removing locations.
-
-    Features:
-    - Shows existing locations in a list.
-    - Allows deletion of non-depot locations.
-    - Allows adding a new location using:
-        - Address/postcode search (via geopy Nominatim)
-        - Name, latitude, longitude fields
-
-    The dialog directly modifies the locations dict passed in.
-    """
+    # Popup dialog for viewing / adding / removing locations.
+    #
+    # Features:
+    # - Shows existing locations in a list.
+    # - Allows deletion of non-depot locations.
+    # - Allows adding a new location using:
+    #     - Address/postcode search (via geopy Nominatim)
+    #     - Name, latitude, longitude fields
+    #
+    # The dialog directly modifies the locations dict passed in.
 
     def __init__(self, locations: Dict[str, Location], parent=None):
         super().__init__(parent)
@@ -166,29 +149,35 @@ class LocationManagerDialog(QDialog):
         Use geopy Nominatim to convert an address/postcode into
         latitude/longitude. This makes the dialog user-friendly.
         """
+
         query = self.search_edit.text().strip()
         if not query:
-            QMessageBox.warning(self, "No query", "Please enter an address or postcode.")
+            QMessageBox.warning(self, "No input", "Please enter a postcode or location.")
             return
 
-        geolocator = Nominatim(user_agent="delivery_route_optimizer")
+        # Your ORS key (you can load this from env if needed)
+        ORS_KEY = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjE5YzI4NjBkYWEzMDQwZmRhODkyYmIzNGM2N2IzMDJjIiwiaCI6Im11cm11cjY0In0="
+
+        geocoder = Geocoder(ORS_KEY)
         try:
-            location = geolocator.geocode(query, timeout=10)
-        except Exception as e:
-            QMessageBox.critical(self, "Geocoding error", str(e))
+            result = geocoder.geocode(query)
+        except RuntimeError as e:
+            QMessageBox.critical(self, "ORS Error", str(e))
             return
 
-        if location is None:
-            QMessageBox.warning(self, "Not found", "Could not find that location.")
+        if result is None:
+            QMessageBox.warning(self, "Not found",
+                                "ORS could not find a match for that text.\n"
+                                "Try a more specificaddress or postcode.")
             return
 
-        # Auto-fill lat/lon
-        self.lat_edit.setText(str(location.latitude))
-        self.lon_edit.setText(str(location.longitude))
+        lat, lon = result
+        self.lat_edit.setText(str(lat))
+        self.lon_edit.setText(str(lon))
 
-        # Suggest a name if empty
+        # Autofill name if empty
         if not self.name_edit.text().strip():
-            self.name_edit.setText(location.address.split(",")[0])
+            self.name_edit.setText(query)
 
     # ------------------------------------------------------------------
     def accept(self):
@@ -289,7 +278,7 @@ class MainWindow(QMainWindow):
         self.output_box: QTextEdit | None = None
         self.map_view: QWebEngineView | None = None
         self.eval_graph_label: QLabel | None = None
-        self.matrics_label: QLabel | None = None
+        self.eval_distance_label: QLabel | None = None
 
         self._setup_ui()
         self._clear_previous_map()
@@ -340,8 +329,19 @@ class MainWindow(QMainWindow):
 
 ########################################################################################
 
+        # Determine folder of this file (gui/)
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        logo_path = os.path.join(base_dir, "logo.png")
+
         icon = QLabel()
-        icon.setPixmap(QPixmap("logo.png").scaled(200, 180))
+        pixmap = QPixmap(logo_path)
+
+        if pixmap.isNull():
+            print("WARNING: Could not load logo from", logo_path)
+        else:
+            icon.setPixmap(
+                pixmap.scaled(200, 180, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
 
         title = QLabel("Delivery Route Optimizer")
         title.setFont(QFont("Segoe UI", 24, QFont.Bold))
@@ -351,11 +351,10 @@ class MainWindow(QMainWindow):
         header.addWidget(icon)
         header.addWidget(title)
         header.setAlignment(Qt.AlignLeft)
-        header.totalMinimumSize()
 
         left_layout.addLayout(header)
 
-#######################################################################################
+        #######################################################################################
 
         # Controls container
         controls_box = QWidget()
@@ -462,46 +461,59 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     def _create_evaluation_tab(self) -> QWidget:
         """
-        Creates the second tab: algorithm evaluation.
+        Creates the 'Algorithm Evaluation' tab.
 
-        Contains:
-        - A button to generate the time-vs-nodes graph using the current
-          set of locations.
-        - An image area to display execution_time.png.
+        Now shows TWO graphs:
+            - Execution time vs nodes
+            - Route distance vs nodes
         """
         tab = QWidget()
         layout = QVBoxLayout()
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(10)
         tab.setLayout(layout)
 
         title = QLabel("Algorithm Evaluation")
-        title.setStyleSheet("font-size: 20px; font-weight: bold;")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(title)
 
         desc = QLabel(
-            "This section compares the performance of all three algorithms:\n"
-            "Nearest Neighbour, Nearest Neighbour + 2-opt, and Brute Force.\n"
-            "Click 'Generate Evaluation Graph' to run timed experiments on\n"
-            "increasing problem sizes and update the chart."
+            "This section compares the performance of all three algorithms: Nearest Neighbour, Nearest Neighbour + 2-opt, and Brute Force.\n"
+            "Click 'Generate Evaluation Graph' to run timed experiments on increasing problem sizes and update the charts."
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
 
-        button = QPushButton("Generate Evaluation Graph")
-        button.clicked.connect(self.generate_evaluation_graph)
-        layout.addWidget(button)
+        generate_button = QPushButton("Generate Evaluation Graph")
+        generate_button.clicked.connect(self.generate_evaluation_graph)
+        layout.addWidget(generate_button)
 
-        self.eval_graph_label = QLabel()
+        # --- Time graph --------------------------------------------------
+        time_title = QLabel("Execution Time vs Nodes:")
+        time_title.setStyleSheet("font-weight: bold; margin-top: 10px;")
+        layout.addWidget(time_title)
+
+        self.eval_graph_label = QLabel("Complexity graph not found. Run benchmark_algorithms() first.")
         self.eval_graph_label.setAlignment(Qt.AlignCenter)
-        self.eval_graph_label.setStyleSheet(
-            "background-color: #f5f5f5; border: 1px solid #dddddd;"
-        )
-        self.eval_graph_label.setMinimumHeight(300)
+        self.eval_graph_label.setMinimumHeight(200)
         layout.addWidget(self.eval_graph_label)
 
-        # Try to load an existing graph if it exists
-        self._load_evaluation_graph()
+        # --- Distance graph ----------------------------------------------
+        dist_title = QLabel("Route Distance vs Nodes:")
+        dist_title.setStyleSheet("font-weight: bold; margin-top: 10px;")
+        layout.addWidget(dist_title)
+
+        self.eval_distance_label = QLabel("Distance graph not found. Run benchmark_algorithms() first.")
+        self.eval_distance_label.setAlignment(Qt.AlignCenter)
+        self.eval_distance_label.setMinimumHeight(200)
+        layout.addWidget(self.eval_distance_label)
+
+        # Clear graphs
+        self.eval_graph_label.clear()
+        self.eval_graph_label.setText("No graph loaded yet.")
+
+        self.eval_distance_label.clear()
+        self.eval_distance_label.setText("No graph loaded yet.")
 
         return tab
 
@@ -624,46 +636,60 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------
     def _load_evaluation_graph(self):
-        """Load execution_time.png into the evaluation tab label, if it exists."""
-        if self.eval_graph_label is None:
-            return
+        """
+        Try to load existing benchmark graphs when the Evaluation tab opens.
 
-        graph_path = os.path.join("gui", "execution_time.png")
-        abs_path = os.path.abspath(graph_path)
+        This is helpful if the user has already run the benchmark in a
+        previous session or earlier in this session.
+        """
+        import os
+        from PyQt5.QtGui import QPixmap
 
-        if os.path.exists(abs_path):
-            pixmap = QPixmap(abs_path)
+        # Project root
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        gui_dir = os.path.join(root_dir, "gui")
+
+        time_path = os.path.join(gui_dir, "execution_time.png")
+        dist_path = os.path.join(gui_dir, "execution_distance.png")
+
+        if self.eval_graph_label and os.path.exists(time_path):
             self.eval_graph_label.setPixmap(
-                pixmap.scaledToWidth(600, Qt.SmoothTransformation)
+                QPixmap(time_path).scaledToWidth(600, Qt.SmoothTransformation)
             )
-        else:
-            self.eval_graph_label.setText(
-                "No evaluation graph yet.\nClick 'Generate Evaluation Graph' to create one."
+
+        if self.eval_distance_label and os.path.exists(dist_path):
+            self.eval_distance_label.setPixmap(
+                QPixmap(dist_path).scaledToWidth(600, Qt.SmoothTransformation)
             )
 
     # ------------------------------------------------------------------
     def generate_evaluation_graph(self):
         """
-        Called from the Evaluation tab.
+        Called when the user presses the 'Generate Evaluation Graph' button.
 
-        Uses the current locations in the controller to run timed
-        experiments and generates gui/execution_time.png via
-        src.utils.benchmark.benchmark_algorithms().
+        Runs the benchmarking routine and updates BOTH graphs:
+            - time graph
+            - distance graph
         """
         locations = self.app.get_locations()
         try:
-            path = benchmark_algorithms(locations)
+            paths = benchmark_algorithms(locations)  # now returns dict
         except Exception as e:
-            QMessageBox.critical(self, "Benchmark Error", str(e))
+            QMessageBox.critical(self, "Benchmark error", str(e))
             return
 
-        if os.path.exists(path):
-            pixmap = QPixmap(path)
+        time_path = paths.get("time")
+        dist_path = paths.get("distance")
+
+        if self.eval_graph_label and time_path and os.path.exists(time_path):
             self.eval_graph_label.setPixmap(
-                pixmap.scaledToWidth(600, Qt.SmoothTransformation)
+                QPixmap(time_path).scaledToWidth(600, Qt.SmoothTransformation)
             )
-        else:
-            QMessageBox.warning(self, "Graph Error", "Graph file could not be found.")
+
+        if self.eval_distance_label and dist_path and os.path.exists(dist_path):
+            self.eval_distance_label.setPixmap(
+                QPixmap(dist_path).scaledToWidth(600, Qt.SmoothTransformation)
+            )
 
 
 # =====================================================================
@@ -684,11 +710,3 @@ def start_gui(app_controller):
     window = MainWindow(app_controller)
     window.show()
     sys.exit(qt_app.exec_())
-
-
-if __name__ == "__main__":
-    # For manual testing (runs without going through main.py)
-    from main import RouteOptimizerApp
-
-    app = RouteOptimizerApp()
-    start_gui(app)

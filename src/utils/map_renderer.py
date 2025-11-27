@@ -17,7 +17,7 @@ IMPORTANT:
 - It only draws what it is given.
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import folium
 import openrouteservice
@@ -26,80 +26,80 @@ from openrouteservice import exceptions as ors_exceptions
 from src.models.location import Location
 
 
-def render_map_with_fallback(route: List[str],
-                             locations: Dict[str, Location]) -> None:
+class MapRenderer:
     """
-    Render a route onto a folium map, using ORS if possible.
+    Responsible for taking a route (list of location names) and
+    drawing it onto a folium map.
 
-    Parameters
-    ----------
-    route : list[str]
-        Sequence of location names representing a *complete loop*, e.g.
-        ['Depot', 'Customer1', 'Customer2', 'Depot'].
-
-    locations : dict[str, Location]
-        Mapping from location names to Location objects.
-
-    Behaviour
-    ---------
-    - First tries to get a realistic driving path from ORS.
-    - If that fails for any reason, falls back to straight-line
-      segments between the location coordinates.
-
-    Output
-    ------
-    Saves the map as 'nearest_delivery.html' in the project root.
+    If ORS fails, falls back to straight-line segments.
     """
-    if not route:
-        # Nothing to draw
-        return
 
-    # Convert route into (lat, lon) coordinate list for fallback
-    coord_list = [locations[name].as_tuple for name in route]
+    def __init__(self, ors_api_key: Optional[str] = None):
+        """
+        Parameters
+        ----------
+        ors_api_key : str or None
+            API key for OpenRouteService. If None, a placeholder is used and
+            ORS calls will probably fail, triggering the fallback.
+        """
+        self.ors_api_key = ors_api_key or "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjE5YzI4NjBkYWEzMDQwZmRhODkyYmIzNGM2N2IzMDJjIiwiaCI6Im11cm11cjY0In0="
 
-    # Try to get road-following path from ORS
-    road_path_latlon = None
-    try:
-        # NOTE: replace this with your real ORS key
-        client = openrouteservice.Client(key="eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjE5YzI4NjBkYWEzMDQwZmRhODkyYmIzNGM2N2IzMDJjIiwiaCI6Im11cm11cjY0In0=")
+    # ------------------------------------------------------------------
+    def render_route(self,
+                     route: List[str],
+                     locations: Dict[str, Location]) -> None:
+        """
+        Render the given route and save it as 'nearest_delivery.html'.
 
-        # ORS expects [lon, lat] pairs
-        route_coords = [
-            [locations[name].longitude, locations[name].latitude]
-            for name in route
-        ]
+        Parameters
+        ----------
+        route : list[str]
+            Sequence of location names representing a complete loop.
+        locations : dict[str, Location]
+            Mapping from name -> Location.
+        """
+        if not route:
+            return
 
-        road = client.directions(
-            coordinates=route_coords,
-            profile="driving-car",
-            format="geojson"
-        )
+        coord_list = [locations[name].as_tuple for name in route]
 
-        geometry = road["features"][0]["geometry"]["coordinates"]
-        # Convert back to (lat, lon) for folium
-        road_path_latlon = [(lat, lon) for lon, lat in geometry]
+        road_path_latlon = None
 
-    except (ors_exceptions.ApiError, Exception):
-        # Fallback: straight lines between our own coordinates
-        road_path_latlon = coord_list
+        # Try to get a road-following path from ORS
+        try:
+            client = openrouteservice.Client(key=self.ors_api_key)
 
-    # Create the map centred on the first point in the route
-    m = folium.Map(location=coord_list[0], zoom_start=12)
+            coords_lonlat = [
+                [locations[name].longitude, locations[name].latitude]
+                for name in route
+            ]
 
-    # Add markers in route order
-    for name in route:
-        loc = locations[name]
-        folium.Marker(
-            location=loc.as_tuple,
-            popup=loc.name
+            road = client.directions(
+                coordinates=coords_lonlat,
+                profile="driving-car",
+                format="geojson"
+            )
+            geometry = road["features"][0]["geometry"]["coordinates"]
+            road_path_latlon = [(lat, lon) for lon, lat in geometry]
+
+        except (ors_exceptions.ApiError, Exception):
+            # Fallback: connect points directly
+            road_path_latlon = coord_list
+
+        # Build folium map
+        m = folium.Map(location=coord_list[0], zoom_start=12)
+
+        for name in route:
+            loc = locations[name]
+            folium.Marker(
+                location=loc.as_tuple,
+                popup=loc.name
+            ).add_to(m)
+
+        folium.PolyLine(
+            locations=road_path_latlon,
+            color="red",
+            weight=2.5
         ).add_to(m)
 
-    # Add polyline for the route path
-    folium.PolyLine(
-        locations=road_path_latlon,
-        color="red",
-        weight=2.5
-    ).add_to(m)
-
-    # Save HTML file for the GUI to embed
-    m.save("nearest_delivery.html")
+        m.save("nearest_delivery.html")

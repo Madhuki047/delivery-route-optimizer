@@ -1,46 +1,71 @@
-# src/algorithms/brute_force_tsp.py
+"""
+brute_force_tsp.py
+------------------
+
+Brute force solver for a small TSP-like delivery problem.
+
+NOW ORGANIZED AS A CLASS:
+
+- BruteForceTSPSolver: encapsulates the brute-force logic.
+- brute_force_tsp(...): helper wrapper function for backwards compatibility.
+"""
 
 from typing import Dict, List, Tuple
 from itertools import permutations
-from geopy.distance import geodesic
 
+from geopy.distance import geodesic
 from src.models.location import Location
 
 
-def _distance(locations: Dict[str, Location], a: str, b: str) -> float:
+class BruteForceTSPSolver:
     """
-    Straight-line distance between two named locations.
+    Brute force TSP solver.
+
+    Tries all possible permutations of the customer nodes and finds
+    the shortest complete loop route starting and ending at the depot.
     """
-    return geodesic(locations[a].as_tuple, locations[b].as_tuple).km
+
+    def __init__(self, locations: Dict[str, Location]):
+        self.locations = locations
+
+    def _distance(self, a: str, b: str) -> float:
+        """Compute straight-line distance between two nodes, in km."""
+        loc1 = self.locations[a].as_tuple
+        loc2 = self.locations[b].as_tuple
+        return geodesic(loc1, loc2).km
+
+    def solve(self, start: str) -> Tuple[List[str], float]:
+        """Compute the optimal TSP route by testing all permutations."""
+        if start not in self.locations:
+            raise ValueError(f"Start node '{start}' not found.")
+
+        others = [name for name in self.locations.keys() if name != start]
+
+        best_route = []
+        best_distance = float("inf")
+
+        for perm in permutations(others):
+            route = [start] + list(perm) + [start]
+            total = 0.0
+
+            for i in range(len(route) - 1):
+                total += self._distance(route[i], route[i + 1])
+
+            if total < best_distance:
+                best_distance = total
+                best_route = route
+
+        return best_route, best_distance
 
 
-def brute_force_tsp(locations: Dict[str, Location],
-                    start: str) -> Tuple[List[str], float]:
+# ----------------------------------------------------------------------
+# Backwards-compatible wrapper
+# ----------------------------------------------------------------------
+def brute_force_tsp(locations: Dict[str, Location], start: str):
     """
-    Brute-force TSP solver.
+    Keeps the old API alive, so existing import statements keep working.
 
-    Tries every possible permutation of visiting all customers starting
-    and ending at 'start', and returns the shortest route.
-
-    WARNING: factorial time – only feasible for small numbers of nodes
-    (your case with 4 customers + depot is fine).
+    Internally creates BruteForceTSPSolver and calls solve().
     """
-    # All nodes except the starting depot
-    others = [name for name in locations.keys() if name != start]
-
-    best_route: List[str] = []
-    best_distance: float = float("inf")
-
-    # Try every possible visiting order of the other nodes
-    for perm in permutations(others):
-        route = [start] + list(perm) + [start]
-
-        total = 0.0
-        for i in range(len(route) - 1):
-            total += _distance(locations, route[i], route[i + 1])
-
-        if total < best_distance:
-            best_distance = total
-            best_route = route
-
-    return best_route, best_distance
+    solver = BruteForceTSPSolver(locations)
+    return solver.solve(start)

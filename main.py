@@ -18,8 +18,9 @@ from typing import Dict
 
 from src.models.location import Location
 from src.algorithms.nearest_neighbour import NearestNeighbourTSP
-from src.algorithms.brute_force_tsp import brute_force_tsp
-from src.utils.map_renderer import render_map_with_fallback
+from src.algorithms.brute_force_tsp import BruteForceTSPSolver
+from src.utils.map_renderer import MapRenderer
+
 
 
 class RouteOptimizerApp:
@@ -35,6 +36,7 @@ class RouteOptimizerApp:
     def __init__(self) -> None:
         # Initialise with a default scenario
         self.locations: Dict[str, Location] = self._build_default_locations()
+        self.map_renderer = MapRenderer()
 
     # ------------------------------------------------------------------
     # 1. Location management
@@ -128,7 +130,7 @@ class RouteOptimizerApp:
 
                 import time
                 t0 = time.perf_counter()
-                nn_route, nn_distance = algo.single_start_route(start)
+                nn_route, nn_distance = algo.nearest_neighbour(start)
                 t1 = time.perf_counter()
 
                 if mode == "nn":
@@ -145,7 +147,8 @@ class RouteOptimizerApp:
             elif mode == "bf":
                 import time
                 t0 = time.perf_counter()
-                final_route, final_distance = brute_force_tsp(locations, start)
+                bf_solver = BruteForceTSPSolver(locations)
+                final_route, final_distance = bf_solver.solve(start)
                 t1 = time.perf_counter()
                 exec_time = t1 - t0
 
@@ -157,7 +160,7 @@ class RouteOptimizerApp:
             result["exec_time"] = exec_time
 
             # Draw the map with whatever route we got
-            render_map_with_fallback(final_route, locations)
+            self.map_renderer.render_route(final_route, locations)
 
         except Exception as e:
             result["error"] = str(e)

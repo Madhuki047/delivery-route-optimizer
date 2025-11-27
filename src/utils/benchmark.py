@@ -2,18 +2,15 @@
 benchmark.py
 ------------
 
-Performance benchmarking utilities for the delivery route optimizer.
+Performance benchmarking for the three algorithms:
 
-The main function benchmark_algorithms() measures the execution time
-of three algorithms:
     - Nearest Neighbour (NN)
     - Nearest Neighbour + 2-opt (NN+2opt)
     - Brute Force (BF)
 
-for increasing problem sizes, using the *current* set of locations.
-
-The resulting graph is saved as gui/execution_time.png and is shown
-on the 'Algorithm Evaluation' tab in the GUI.
+Now produces TWO graphs:
+    1) execution_time.png     (time vs nodes)
+    2) execution_distance.png (route distance vs nodes)
 """
 
 from typing import Dict, List
@@ -27,107 +24,163 @@ from src.algorithms.nearest_neighbour import NearestNeighbourTSP
 from src.algorithms.brute_force_tsp import brute_force_tsp
 
 
-def benchmark_algorithms(locations: Dict[str, Location]) -> str:
+class AlgorithmBenchmark:
     """
-    Benchmark NN, NN+2opt and BF on increasing problem sizes.
+    Encapsulates the logic for measuring and plotting algorithm performance.
 
-    Parameters
+    Attributes
     ----------
     locations : dict[str, Location]
-        Current set of locations from the controller / GUI.
-
-    Assumptions
-    -----------
-    - Must contain a 'Depot' entry.
-    - All other locations are treated as customers.
-
-    Strategy
-    --------
-    For k = 1 .. number_of_customers:
-        - Use a sub-problem with:
-            Depot + first k customers
-        - Time:
-            * NN (Nearest Neighbour)
-            * NN+2opt (Nearest Neighbour + 2-opt improvement)
-            * BF (Brute Force TSP)
-        - Record execution time for each.
-
-    Returns
-    -------
-    str
-        Absolute path of the saved PNG file.
+        Set of locations to use for benchmarking.
     """
-    if "Depot" not in locations:
-        raise ValueError("Locations must contain a 'Depot' node for benchmarking.")
 
-    # Separate depot and customers
-    depot = locations["Depot"]
-    customers: List[Location] = [
-        loc for name, loc in locations.items() if name != "Depot"
-    ]
+    def __init__(self, locations: Dict[str, Location]) -> None:
+        if "Depot" not in locations:
+            raise ValueError("Locations must contain a 'Depot' node for benchmarking.")
+        self.locations = locations
 
-    if not customers:
-        raise ValueError("Need at least one customer for benchmarking.")
+    # ------------------------------------------------------------------
+    def run(self) -> Dict[str, str]:
+        """
+        Run benchmarking for increasing problem sizes and save TWO PNG graphs.
 
-    # Lists for plotting
-    node_counts: List[int] = []
-    times_nn: List[float] = []
-    times_nn_2opt: List[float] = []
-    times_bf: List[float] = []
+        Strategy
+        --------
+        Let customers = all locations except Depot.
 
-    # Increase k = number of customers in the problem
-    for k in range(1, len(customers) + 1):
-        # Build sub-problem: Depot + first k customers
-        subset = [depot] + customers[:k]
-        locs = {loc.name: loc for loc in subset}
+        For k = 1 .. len(customers):
+            - Build subproblem with Depot + first k customers.
+            - Time and measure:
+                * NN
+                * NN + 2-opt
+                * BF
 
-        total_nodes = len(locs)  # Depot + k customers
+        Graphs
+        ------
+        1) Execution time vs nodes (seconds)
+        2) Route distance vs nodes (km)
 
-        # --- NEAREST NEIGHBOUR ---------------------------------------
-        nn_algo = NearestNeighbourTSP(locs)
-        t0 = time.perf_counter()
-        nn_route, nn_dist = nn_algo.single_start_route("Depot")
-        t1 = time.perf_counter()
-        times_nn.append(t1 - t0)
+        Returns
+        -------
+        dict
+            {
+                "time": "<absolute path to execution_time.png>",
+                "distance": "<absolute path to execution_distance.png>"
+            }
+        """
+        depot = self.locations["Depot"]
+        customers: List[Location] = [
+            loc for name, loc in self.locations.items() if name != "Depot"
+        ]
 
-        # --- NEAREST NEIGHBOUR + 2-opt -------------------------------
-        t2 = time.perf_counter()
-        _, _ = nn_algo.two_opt(nn_route)
-        t3 = time.perf_counter()
-        # Total time from start of NN to end of 2-opt
-        times_nn_2opt.append(t3 - t0)
+        if not customers:
+            raise ValueError("Need at least one customer for benchmarking.")
 
-        # --- BRUTE FORCE ---------------------------------------------
-        t4 = time.perf_counter()
-        _, _ = brute_force_tsp(locs, "Depot")
-        t5 = time.perf_counter()
-        times_bf.append(t5 - t4)
+        # X-axis: number of nodes (Depot + customers)
+        node_counts: List[int] = []
 
-        node_counts.append(total_nodes)
+        # Time results
+        times_nn: List[float] = []
+        times_nn_2opt: List[float] = []
+        times_bf: List[float] = []
 
-    # --- Plot graph --------------------------------------------------
-    plt.figure(figsize=(8, 5))
+        # Distance results
+        dists_nn: List[float] = []
+        dists_nn_2opt: List[float] = []
+        dists_bf: List[float] = []
 
-    plt.plot(node_counts, times_nn, marker="o", label="Nearest Neighbour (NN)")
-    plt.plot(node_counts, times_nn_2opt, marker="o", label="NN + 2-opt")
-    plt.plot(node_counts, times_bf, marker="o", label="Brute Force (BF)")
+        # Increase the number of customers in the problem
+        for k in range(1, len(customers) + 1):
+            subset = [depot] + customers[:k]
+            locs = {loc.name: loc for loc in subset}
+            total_nodes = len(locs)  # Depot + k customers
 
-    # Custom x-axis labels: Node 2, Node 3, ...
-    xlabels = [f"Node {n}" for n in node_counts]
-    plt.xticks(node_counts, xlabels)
+            # --- Nearest Neighbour -----------------------------------
+            nn_algo = NearestNeighbourTSP(locs)
+            t0 = time.perf_counter()
+            nn_route, nn_dist = nn_algo.nearest_neighbour("Depot")
+            t1 = time.perf_counter()
+            times_nn.append(t1 - t0)
+            dists_nn.append(nn_dist)
 
-    plt.xlabel("Problem size (Node count: Depot + customers)")
-    plt.ylabel("Execution time (seconds)")
-    plt.title("Execution Time vs Nodes for NN, NN+2opt, and BF")
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
+            # --- Nearest Neighbour + 2-opt ---------------------------
+            t2 = time.perf_counter()
+            nn2_route, nn2_dist = nn_algo.two_opt(nn_route)
+            t3 = time.perf_counter()
+            times_nn_2opt.append(t3 - t0)  # NN + 2-opt combined time
+            dists_nn_2opt.append(nn2_dist)
 
-    # Save into project/gui folder (not src/utils/gui)
-    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    save_path = os.path.join(root_dir, "gui", "execution_time.png")
-    plt.savefig(save_path)
-    plt.close()
+            # --- Brute Force -----------------------------------------
+            t4 = time.perf_counter()
+            bf_route, bf_dist = brute_force_tsp(locs, "Depot")
+            t5 = time.perf_counter()
+            times_bf.append(t5 - t4)
+            dists_bf.append(bf_dist)
 
-    print(f"Saved evaluation graph to {save_path}")
-    return save_path
+            node_counts.append(total_nodes)
+
+        # Root folder (project root, not src/utils)
+        root_dir = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+        gui_dir = os.path.join(root_dir, "gui")
+        os.makedirs(gui_dir, exist_ok=True)
+
+        # === 1) TIME GRAPH ===========================================
+        plt.figure(figsize=(8, 5))
+
+        plt.plot(node_counts, times_nn, marker="o", label="Nearest Neighbour (NN)")
+        plt.plot(node_counts, times_nn_2opt, marker="o", label="NN + 2-opt")
+        plt.plot(node_counts, times_bf, marker="o", label="Brute Force (BF)")
+
+        xlabels = [f"Node {n}" for n in node_counts]
+        plt.xticks(node_counts, xlabels)
+
+        plt.xlabel("Problem size (Node count: Depot + customers)")
+        plt.ylabel("Execution time (seconds)")
+        plt.title("Execution Time vs Nodes for NN, NN+2opt, and BF")
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+
+        time_path = os.path.join(gui_dir, "execution_time.png")
+        plt.savefig(time_path)
+        plt.close()
+
+        # === 2) DISTANCE GRAPH ======================================
+        plt.figure(figsize=(8, 5))
+
+        plt.plot(node_counts, dists_nn, marker="o", label="Nearest Neighbour (NN)")
+        plt.plot(node_counts, dists_nn_2opt, marker="o", label="NN + 2-opt")
+        plt.plot(node_counts, dists_bf, marker="o", label="Brute Force (BF)")
+
+        plt.xticks(node_counts, xlabels)
+        plt.xlabel("Problem size (Node count: Depot + customers)")
+        plt.ylabel("Route distance (km)")
+        plt.title("Route Distance vs Nodes for NN, NN+2opt, and BF")
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+
+        dist_path = os.path.join(gui_dir, "execution_distance.png")
+        plt.savefig(dist_path)
+        plt.close()
+
+        print(f"Saved time graph to {time_path}")
+        print(f"Saved distance graph to {dist_path}")
+
+        return {"time": time_path, "distance": dist_path}
+
+
+# ----------------------------------------------------------------------
+# Helper function to preserve simple API for the GUI
+# ----------------------------------------------------------------------
+def benchmark_algorithms(locations: Dict[str, Location]) -> Dict[str, str]:
+    """
+    Called by the GUI.
+
+    Returns a dict with absolute paths to both graphs:
+        {"time": "...execution_time.png", "distance": "...execution_distance.png"}
+    """
+    bench = AlgorithmBenchmark(locations)
+    return bench.run()
