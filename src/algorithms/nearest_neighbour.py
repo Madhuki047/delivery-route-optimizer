@@ -29,6 +29,11 @@ class NearestNeighbourTSP:
 
         self.locations = locations
 
+        # Stats for analysis / GUI metrics
+        self.distance_calls = 0
+        self.two_opt_swaps_considered = 0
+        self.two_opt_improvements = 0
+
     # ------------------------------------------------------------------
     # Distance helper
     # ------------------------------------------------------------------
@@ -39,6 +44,7 @@ class NearestNeighbourTSP:
         # and by the 2-opt improvement step.
         #
         # Currently: geodesic (great-circle) distance in kilometres.
+        self.distance_calls += 1
 
         loc1 = self.locations[name1].as_tuple   # (lat, lon)
         loc2 = self.locations[name2].as_tuple
@@ -63,6 +69,8 @@ class NearestNeighbourTSP:
         #     total_distance is the sum of distances along that loop.
         #
         # This is essentially your original best_fit_search() function.
+
+        self.reset_stats()
 
         current = start
         route: List[str] = [current]
@@ -132,12 +140,17 @@ class NearestNeighbourTSP:
             # We avoid index 0 and the last index (they are both 'Depot').
             for i in range(1, len(best_route) - 2):
                 for k in range(i + 1, len(best_route) - 1):
+                    # count every candidate swap we consider
+                    self.two_opt_swaps_considered += 1
+
                     new_route = self._two_opt_swap(best_route, i, k)
                     new_distance = self._total_route_distance(new_route)
 
                     if new_distance < best_distance:
                         best_route = new_route
                         best_distance = new_distance
+                        # count swaps
+                        self.two_opt_improvements += 1
                         improved = True
                         # Restart the search from the beginning of the route
                         break
@@ -147,14 +160,11 @@ class NearestNeighbourTSP:
         return best_route, best_distance
 
     def _two_opt_swap(self, route: List[str], i: int, k: int) -> List[str]:
-        """
         # Returns a new route where the segment route[i:k+1] has been reversed.
-
-        Example:
-            route = [A, B, C, D, E, F]
-            i = 2 (C), k = 4 (E)
-            -> [A, B, E, D, C, F]
-        """
+        # Example:
+        #     route = [A, B, C, D, E, F]
+        #     i = 2 (C), k = 4 (E)
+        #     -> [A, B, E, D, C, F]
         new_route = (
             route[0:i] +
             list(reversed(route[i:k + 1])) +
@@ -163,10 +173,22 @@ class NearestNeighbourTSP:
         return new_route
 
     def _total_route_distance(self, route: List[str]) -> float:
-        """
-        Compute the total distance along a particular route loop.
-        """
+        # Compute the total distance along a particular route loop.
         total = 0.0
         for idx in range(len(route) - 1):
             total += self._distance(route[idx], route[idx + 1])
         return total
+
+    def reset_stats(self):
+        """Reset all counters before a new run."""
+        self.distance_calls = 0
+        self.two_opt_swaps_considered = 0
+        self.two_opt_improvements = 0
+
+    def get_stats(self) -> dict:
+        """Return a dictionary of current statistics."""
+        return {
+            "distance_calls": self.distance_calls,
+            "two_opt_swaps_considered": self.two_opt_swaps_considered,
+            "two_opt_improvements": self.two_opt_improvements,
+        }

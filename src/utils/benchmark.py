@@ -127,7 +127,7 @@ class AlgorithmBenchmark:
         os.makedirs(gui_dir, exist_ok=True)
 
         # === 1) TIME GRAPH ===========================================
-        plt.figure(figsize=(8, 5))
+        plt.figure(figsize=(5, 4))
 
         plt.plot(node_counts, times_nn, marker="o", label="Nearest Neighbour (NN)")
         plt.plot(node_counts, times_nn_2opt, marker="o", label="NN + 2-opt")
@@ -148,7 +148,7 @@ class AlgorithmBenchmark:
         plt.close()
 
         # === 2) DISTANCE GRAPH ======================================
-        plt.figure(figsize=(8, 5))
+        plt.figure(figsize=(5, 4))
 
         plt.plot(node_counts, dists_nn, marker="o", label="Nearest Neighbour (NN)")
         plt.plot(node_counts, dists_nn_2opt, marker="o", label="NN + 2-opt")
@@ -176,11 +176,9 @@ class AlgorithmBenchmark:
 # Helper function to preserve simple API for the GUI
 # ----------------------------------------------------------------------
 def benchmark_algorithms(locations: Dict[str, Location]) -> Dict[str, str]:
-    """
-    Called by the GUI.
+    # Called by the GUI.
+    # Returns a dict with absolute paths to both graphs:
+    #     {"time": "...execution_time.png", "distance": "...execution_distance.png"}
 
-    Returns a dict with absolute paths to both graphs:
-        {"time": "...execution_time.png", "distance": "...execution_distance.png"}
-    """
     bench = AlgorithmBenchmark(locations)
     return bench.run()

@@ -1,21 +1,16 @@
-"""
-map_renderer.py
-----------------
-
-Responsible ONLY for rendering a route onto a map.
-
-- Takes an ordered list of location names (a route loop).
-- Uses the locations dict to get coordinates.
-- Tries to request a road-following path from OpenRouteService (ORS).
-- If ORS fails (bad key, no internet, quota exceeded), falls back to
-  straight line segments between locations.
-- Saves the result to 'nearest_delivery.html' which the GUI displays.
-
-IMPORTANT:
-- This file does NOT run any algorithms.
-- It does NOT change the route.
-- It only draws what it is given.
-"""
+# Responsible ONLY for rendering a route onto a map.
+#
+# - Takes an ordered list of location names (a route loop).
+# - Uses the locations dict to get coordinates.
+# - Tries to request a road-following path from OpenRouteService (ORS).
+# - If ORS fails (bad key, no internet, quota exceeded), falls back to
+#   straight line segments between locations.
+# - Saves the result to 'nearest_delivery.html' which the GUI displays.
+#
+# IMPORTANT:
+# - This file does NOT run any algorithms.
+# - It does NOT change the route.
+# - It only draws what it is given.
 
 from typing import Dict, List, Optional
 
@@ -27,37 +22,31 @@ from src.models.location import Location
 
 
 class MapRenderer:
-    """
-    Responsible for taking a route (list of location names) and
-    drawing it onto a folium map.
-
-    If ORS fails, falls back to straight-line segments.
-    """
+    # Responsible for taking a route (list of location names) and
+    # drawing it onto a folium map.
+    #
+    # If ORS fails, falls back to straight-line segments.
 
     def __init__(self, ors_api_key: Optional[str] = None):
-        """
-        Parameters
-        ----------
-        ors_api_key : str or None
-            API key for OpenRouteService. If None, a placeholder is used and
-            ORS calls will probably fail, triggering the fallback.
-        """
+        # Parameters
+        # ----------
+        # ors_api_key : str or None
+        #     API key for OpenRouteService. If None, a placeholder is used and
+        #     ORS calls will probably fail, triggering the fallback.
         self.ors_api_key = ors_api_key or "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjE5YzI4NjBkYWEzMDQwZmRhODkyYmIzNGM2N2IzMDJjIiwiaCI6Im11cm11cjY0In0="
 
     # ------------------------------------------------------------------
     def render_route(self,
                      route: List[str],
                      locations: Dict[str, Location]) -> None:
-        """
-        Render the given route and save it as 'nearest_delivery.html'.
-
-        Parameters
-        ----------
-        route : list[str]
-            Sequence of location names representing a complete loop.
-        locations : dict[str, Location]
-            Mapping from name -> Location.
-        """
+        # Render the given route and save it as 'nearest_delivery.html'.
+        #
+        # Parameters
+        # ----------
+        # route : list[str]
+        #     Sequence of location names representing a complete loop.
+        # locations : dict[str, Location]
+        #     Mapping from name -> Location.
         if not route:
             return
 
@@ -93,7 +82,8 @@ class MapRenderer:
             loc = locations[name]
             folium.Marker(
                 location=loc.as_tuple,
-                popup=loc.name
+                popup=loc.name,
+                tooltip=loc.name
             ).add_to(m)
 
         folium.PolyLine(
