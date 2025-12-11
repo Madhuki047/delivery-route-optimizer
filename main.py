@@ -161,7 +161,7 @@ class RouteOptimizerApp:
 
 
 # ----------------------------------------------------------------------
-# 4. Entry point – minimal, perfect for a sequence diagram
+# 4. Entry point
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
     from gui.window import start_gui
